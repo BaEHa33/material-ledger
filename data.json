@@ -1,10 +1,10 @@
 {
  "items": [],
  "logs": [],
- "updated": "2026-11-10 12:53",
+ "updated": "2026-11-10 12:54",
  "settings": {
   "org": "",
-  "qrPrefix": "",
+  "qrPrefix": "https://baeha33.github.io/material-ledger/",
   "fields": {
    "code": true,
    "name": true,
