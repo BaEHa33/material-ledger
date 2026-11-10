@@ -122,7 +122,7 @@
    "type": "init"
   }
  ],
- "updated": "2026-11-10 12:58",
+ "updated": "2026-11-10 13:55",
  "settings": {
   "org": "",
   "qrPrefix": "https://baeha33.github.io/material-ledger/",
@@ -133,6 +133,7 @@
    "spec": false,
    "unit": false,
    "qty": false
-  }
+  },
+  "ignored": []
  }
 }
