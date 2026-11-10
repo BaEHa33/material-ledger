@@ -1,0 +1,17 @@
+{
+ "items": [],
+ "logs": [],
+ "updated": "",
+ "settings": {
+  "org": "",
+  "qrPrefix": "",
+  "fields": {
+   "code": true,
+   "name": true,
+   "loc": false,
+   "spec": false,
+   "unit": false,
+   "qty": false
+  }
+ }
+}
