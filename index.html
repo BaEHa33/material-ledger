@@ -3786,7 +3786,11 @@ function scheduleCommit(msg,quiet){
   else if(window._quietNext!==false)window._quietNext=true;
   stashPending();                       /* 先在本机留草稿：这 1.5 秒内刷新/关页面也不丢 */
   if(commitTimer)clearTimeout(commitTimer);
-  commitTimer=setTimeout(()=>{commitTimer=null;const q=(window._quietNext!==false);window._quietNext=undefined;doCommit(q);},300);
+  /* 上传窗口给 1.5 秒：连录好几条料、连点几下都合并成一次上传。
+     原来 300 毫秒，一条一条录（间隔不到一秒）每一条都整份上传 240 多 KB，
+     实测连录 3 条发了 11 个请求（data 4 次 + logs + marks），手机上就是一直转圈、一卡一卡。
+     草稿在点下保存那一刻就落本机了，窗口里关页面也有下次打开补传，不丢数 */
+  commitTimer=setTimeout(()=>{commitTimer=null;const q=(window._quietNext!==false);window._quietNext=undefined;doCommit(q);},1500);
 }
 const PEND_KEY='wz_gh_pending';
 let retryTimer=null, failedOnce=false;
@@ -6229,10 +6233,10 @@ function cardHtml(it,f){
   if(f.spec&&it.spec)meta.push('规格 '+it.spec);
   if(f.unit&&it.unit)meta.push('单位 '+it.unit);
   const side=[];
-  /* 只数还活着的：别的设备删掉的那条还留在 items 里（只剩墓碑），拿它一起数会误判成
-     「同编码多库位」，于是卡片上硬多印一行库位，而这些卡其实只有一条料 */
-  const multi=S.items.filter(x=>String(x.code)===String(it.code)&&!S.deleted[kOf(x)]).length>1;   /* 同编码多库位：卡片必须标库位，不然两张卡一模一样 */
-  if((f.loc||multi)&&it.loc)side.push('<div class="c-line"><span class="c-lb">库位</span> <b>'+esc(it.loc)+'</b></div>');
+  /* 卡面显示哪些字段，一律照「设置 → 打印字段」来，不再自作主张加行。
+     以前同编码多库位时这里会硬印一行库位（怕两张卡长得一样），实际一出现就多出半行字，
+     人明确要求「统一按设置里来」。真要区分同编码的两个库位，自己在设置里把库位勾上。 */
+  if(f.loc&&it.loc)side.push('<div class="c-line"><span class="c-lb">库位</span> <b>'+esc(it.loc)+'</b></div>');
   if(f.qty)side.push('<div class="c-line"><span class="c-lb">账面</span> <b>'+fmt(it.qty)+'</b> '+esc(it.unit||'')+'</div>');
   const bar=String(S.settings.org||'').trim()||'扫码查看库存';
   return '<div class="card">'+
