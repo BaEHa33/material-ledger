@@ -5236,15 +5236,31 @@ function parseText(text){
   for(let i=0;i<src.length;i++){
     const c=src.charAt(i);
     if(c==='"'){
-      if(q&&src.charAt(i+1)==='"'){cur+='""';i++;continue;}
-      q=!q;cur+='"';continue;
+      /* 只有「字段开头」的引号才算 CSV 引号。SAP 的描述里到处是英寸符号（G1/2"、2"、7"），
+         以前见一个 " 就翻一次状态，奇数个的那 30 行把后面几十上百行吞成一行：
+         1994 行的清单只解析出 1637 行，少的 357 行就是这么没的 */
+      if(q){
+        const nc=src.charAt(i+1);
+        if(nc==='"'){cur+='""';i++;continue;}
+        if(nc==='\t'||nc==='\n'||nc===''){q=false;}
+        cur+='"';continue;
+      }
+      const pc=cur.charAt(cur.length-1);
+      if(cur===''||pc==='\t'){q=true;}
+      cur+='"';continue;
     }
     if(c==='\n'&&!q){if(cur.trim()!=='')lines.push(cur);cur='';continue;}
     cur+=c;
   }
   if(cur.trim()!=='')lines.push(cur);
   if(!lines.length)return null;
-  const rows=lines.map(l=>splitLine(l).map(c=>c.replace(/^"|"$/g,'').trim()));
+  /* 只脱掉「整个字段被一对引号包住」的那层引号。以前见开头的 " 和结尾的 " 就各删一个，
+     「热电偶 7"」这种库位描述里带英寸符号的，末尾那个英寸符号被当成收尾引号删掉了 */
+  const rows=lines.map(l=>splitLine(l).map(c=>{
+    let v=String(c==null?'':c);
+    if(v.length>1&&v.charAt(0)==='"'&&v.charAt(v.length-1)==='"')v=v.slice(1,-1).replace(/""/g,'"');
+    return v.trim();
+  }));
   return {rows};
 }
 function detectHeader(row){
