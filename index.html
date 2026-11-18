@@ -3467,6 +3467,22 @@ return {items:items,updated:(rem.updated||local.updated||today()),by:(rem.by||lo
 }
 
 /* 变动记录的合并：去重 + 分池 + 体积兜底。记录单独存一个 logs.json，人工能存到 5000 条 */
+/* 清空全部数据会在变动记录里留下一条 type='wipe' 的记录。
+   以前清空完只是本机把 logs 换成那一条，服务器 logs.json 一旦还有旧的、
+   或者别处一拉，mergeLogs 又把旧记录全合并回来——清空等于白清。
+   这里以「清空记录的时间」当水位线：比它早的记录一律不认（本地和远端都算） */
+function logWipeAt(list){
+  let w='';
+  (list||[]).forEach(l=>{if(l&&l.type==='wipe'&&String(l.t||'')>w)w=String(l.t||'');});
+  return w;
+}
+function cutLogs(list){
+  const at=logWipeAt(list);
+  if(!at)return list||[];
+  /* 只比到分钟：清空那一分钟里刚做的记录不该被误删（清空戳到秒，记录只到分钟） */
+  const cut=at.slice(0,16);
+  return (list||[]).filter(l=>String((l&&l.t)||'')>=cut);
+}
 function mergeLogs(remoteLogs,localLogs){
   const seen={},logs=[];
   (remoteLogs||[]).concat(localLogs||[]).forEach(l=>{
@@ -3630,7 +3646,7 @@ const DB={
       const rl=await fetch('./logs.json?t='+Date.now(),{cache:'no-store'});
       if(rl.ok){
         const jl=await rl.json();
-        S.logs=mergeLogs(jl.logs||[],S.logs||[]);
+        S.logs=cutLogs(mergeLogs(jl.logs||[],S.logs||[]));
         this.lastLogErr=false;
       }else{this.lastLogPull=0;this.lastLogErr=true;}   /* 没拿到就别说「刚拉过」：不然断网一下白等一分钟 */
     }catch(e){this.lastLogPull=0;this.lastLogErr=true;}
@@ -4181,6 +4197,7 @@ function load(){
       S.settings.ignored=[];
       S.deleted=asObj(S.deleted);
       S.count=asObj(S.count);
+      S.logs=cutLogs(S.logs||[]);
     }
   }catch(e){}
   try{const u=JSON.parse(localStorage.getItem(USER_KEY)||'null');if(u&&u.userName)S.settings.userName=u.userName;}catch(e){}
