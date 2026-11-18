@@ -4857,14 +4857,23 @@ function adjRowsHtml(){
     clBox;
 }
 /* 待对账的两个动作：用SAP数 / 结案。按钮在 renderDiff 里渲出来，这里统一绑 */
+/* 差异页一次只画 80 条：1914 条的清单整张画出来，手机上要卡将近 2 秒。
+   没画出来的行默认仍算「已勾选」，用户取消过哪几条记在 diffOff 里，
+   所以「全选」和「应用」管的是整批，不是屏幕上看得见的这几行 */
+let diffShow=80;const DIFF_STEP=80;let diffOff=new Set();
+function diffAllKeys(d){
+  const ks=[];
+  (d.add||[]).concat(d.chg||[]).forEach(r=>ks.push(r.key));
+  (d.meta||[]).forEach(m=>{if(!m.qchg)ks.push('m:'+kOf(m.r));});
+  return ks;
+}
 /* 「全选/取消」这名字有歧义：进来默认全是勾着的，点一下其实等于全部取消。
    有人以为在「全选」，把勾全去掉了，再点应用就变成「没有勾选任何差异」。
    按当下状态显示成「全部取消」或「全选」，点下去会发生什么一眼就明白 */
 function syncAllChkLabel(){
   const btn=document.getElementById('btnAllChk');if(!btn)return;
-  const boxes=[...document.querySelectorAll('.dchk')];
-  const allOn=boxes.length&&boxes.every(b=>b.checked);
-  btn.textContent=allOn?'全部取消':'全选';
+  /* 分批显示后不能只看屏幕上的勾选框：没画出来的那些本来就算选着 */
+  btn.textContent=(diffOff&&diffOff.size)?'全选':'全部取消';
 }
 document.addEventListener('change',e=>{
   try{if(e.target&&e.target.classList&&e.target.classList.contains('dchk'))syncAllChkLabel();}catch(_){}
@@ -5711,6 +5720,12 @@ function renderDiff(){
   /* 单据对上了、标记在这里解除了：这份解除必须存下来，不然一刷新又全回来，人以为系统没认账 */
   if(d.cleared){try{save({quiet:true});}catch(e){}}
   const meta=S.pending;
+  /* 换了一批就复位：上一批展开到第几条、取消了哪几条，不能带到这一批来 */
+  /* 按「这批是哪一批」认，不按时间认：同一分钟连导两批，时间一样但东西不一样 */
+  const __bId=String(meta.at||'')+'#'+((meta.rows||[]).length)+'#'+((meta.rows&&meta.rows[0])?kOf(meta.rows[0]):'');
+  if(window.__diffBatchAt!==__bId){window.__diffBatchAt=__bId;diffOff=new Set();diffShow=DIFF_STEP;}
+  const addChgAll=d.add.concat(d.chg);
+  const addChgShow=addChgAll.slice(0,diffShow);
   box.innerHTML=
   '<div class="note" style="margin-bottom:12px">导入时间 '+esc(meta.at)+'，共 '+meta.rows.length+' 条'+
     /* 14 个人共用这一份：几台电脑都能导 SAP，只写时间不写人，下一台打开会以为是自己刚导的那批，
@@ -5795,9 +5810,9 @@ function renderDiff(){
     '<colgroup><col style="width:9%"><col style="width:14%"><col style="width:26%"><col style="width:12%"><col style="width:12%"><col style="width:14%"><col style="width:13%"></colgroup>'+
     '<thead><tr><th>选</th><th>类型</th><th>物料描述</th><th class="num">台账库存</th><th class="num">新导入</th><th class="num">差异</th><th>物料编码</th></tr></thead>'+
     '<tbody>'+
-    (d.add.concat(d.chg).map(r=>{
+    (addChgShow.map(r=>{
       const delta=r.type==='add'?null:(r.neu-r.old);
-      return '<tr><td style="text-align:center"><input type="checkbox" class="dchk" data-key="'+esc(r.key)+'" checked style="width:22px;height:22px"></td>'+
+      return '<tr><td style="text-align:center"><input type="checkbox" class="dchk" data-key="'+esc(r.key)+'"'+(diffOff.has(r.key)?'':' checked')+' style="width:22px;height:22px"></td>'+
         '<td><span class="chip '+(r.type==='add'?'up':'wn')+'">'+(r.type==='add'?'新增':'变动')+'</span></td>'+
         /* 换库位提示挂在描述列下面，不挂类型列：类型列只有 15%，手机上约 60px，
            几个字就撑爆、后半截直接被裁掉，等于提示没给 */
@@ -5819,6 +5834,9 @@ function renderDiff(){
         '<td class="num">'+(delta==null?'<span class="chip up">新建档</span>':(delta>0?'+':'')+fmt(delta))+'</td>'+
         '<td>'+esc(r.code)+(r.loc?'<div class="tiny">'+esc(r.loc)+'</div>':'')+'</td></tr>';
     }).join('')||'')+
+    (addChgAll.length>addChgShow.length
+      ? '<tr><td colspan="7" style="text-align:center;padding:12px"><button class="btn sm" id="btnDiffMore">还有 '+(addChgAll.length-addChgShow.length)+' 条没显示，点这里再显示 '+DIFF_STEP+' 条</button></td></tr>'
+      : '')+
     /* 「消失」以前塞在 6% 宽的「选」列里，手机上直接被截成「消...」。
        挪到 15% 宽的类型列，选列留空（消失的行本来也不给勾选） */
     d.gone.map(r=>'<tr style="opacity:.8"><td></td>'+
@@ -5847,7 +5865,7 @@ function renderDiff(){
           const pick=(x,f)=>{const v=(f==='描述'?x.name:f==='规格'?x.spec:f==='单位'?x.unit:x.loc);return String(v==null?'':v);};
           /* 数量也变了的那条，改哪些资料由主表那个勾决定（勾了就一起写，取消就一起不动），
              这里再给一个勾会变成两个开关互相打架：勾了资料、取消数量，最后变成「数量没改、描述改了」 */
-          return '<tr><td>'+(m.qchg?'<span class="muted">—</span>':'<input type="checkbox" class="dchk" data-key="'+esc('m:'+kOf(m.r))+'" checked style="width:22px;height:22px">')+'</td>'+
+          return '<tr><td>'+(m.qchg?'<span class="muted">—</span>':'<input type="checkbox" class="dchk" data-key="'+esc('m:'+kOf(m.r))+'"'+(diffOff.has('m:'+kOf(m.r))?'':' checked')+' style="width:22px;height:22px">')+'</td>'+
             '<td title="'+esc(m.name||'—')+'">'+esc(m.name||'—')+'</td>'+
             '<td>'+m.fields.map(f=>esc(f)+'：<span class="muted">'+esc(pick(m.o,f)||'（空）')+'</span> → <b>'+esc(pick(m.r,f)||'（空）')+'</b>').join('　')+
             (m.qchg?'　<span class="tiny">（库存数量同时也变了，跟上面一起改）</span>':'')+'</td>'+
@@ -5862,11 +5880,18 @@ function renderDiff(){
     if(S.pending){S.pending.part=this.checked;try{saveNow();}catch(e){}}
   };
   document.getElementById('btnAllChk').onclick=()=>{
-    const boxes=[...document.querySelectorAll('.dchk')];
-    const allOn=boxes.length&&boxes.every(b=>b.checked);
-    boxes.forEach(b=>b.checked=!allOn);
-    syncAllChkLabel();
+    /* 分批显示以后不能再按屏幕上那几个勾选框算了：没画出来的几百条也得跟着走 */
+    const all=diffAllKeys(d);
+    if(!diffOff.size){all.forEach(k=>diffOff.add(k));}
+    else{diffOff=new Set();}
+    renderDiff();
   };
+  /* 单条勾选记进 diffOff，翻页/重画以后还是原来那个状态 */
+  [...document.querySelectorAll('.dchk')].forEach(b=>{
+    b.onchange=()=>{ if(b.checked)diffOff.delete(b.dataset.key);else diffOff.add(b.dataset.key); syncAllChkLabel(); };
+  });
+  const mo=document.getElementById('btnDiffMore');
+  if(mo)mo.onclick=()=>{diffShow+=DIFF_STEP;renderDiff();};
   document.getElementById('btnDiscard').onclick=()=>{
     /* 只说「台账不会变」会让人以为手改记录一起丢了：那批待入库/待对账是独立的，
        放弃批次不动它们，得写一句，不然没人敢点 */
@@ -5910,7 +5935,8 @@ function renderDiff(){
     /* 兜底：这批一条有效物料都没有（比如只粘进了合计行、或草稿坏掉），
        绝不能让「不勾＝全部库存」把整份台账当成「清单里没有的」全删掉 */
     if(!((S.pending||{}).rows||[]).length){toast('这一批没有一条有效物料，不能应用：台账保持不动，重新导入一次',5000);return;}
-    const keys=new Set([...document.querySelectorAll('.dchk')].filter(b=>b.checked).map(b=>b.dataset.key));
+    /* 整批的勾选状态 = 全部 key 减去用户取消过的，跟屏幕上画了几行无关 */
+    const keys=new Set(diffAllKeys(d).filter(k=>!diffOff.has(k)));
     /* 不勾 = 这批就是全部库存，清单里没有的按真没了处理（连 0 库存一起清）；
        勾上 = 这次只导了一部分，没在清单里的一律不动。注意跟原来那个「以最新导入为准」正好反过来 */
     const isPart=document.getElementById('chkGone').checked;
@@ -5959,15 +5985,22 @@ function applyDiff(d,keys,wipeGone){
      应用完差异页就空了，光看逐条的记录拼不出「这批原本差哪几条」 */
   const __l0=S.logs.length;
   const rows=S.pending?S.pending.rows:[];
+  /* 一批 1900 条时，每行都去 S.items 里 find 一遍就是三百多万次比较，
+     手机上光点「应用」就卡一秒。先按 kOf 建个下标表，循环里直接取 */
+  const idxOf={};
+  S.items.forEach((i,ix)=>{const k=kOf(i);(idxOf[k]=idxOf[k]||[]).push(ix);});
+  const pick=(kk)=>{const a=idxOf[kk];return (a&&a.length)?S.items[a[0]]:null;};
   rows.forEach(r=>{
     const kk=kOf(r);
     if(keys.has('a:'+kk)){
       /* 只有「还活着」的那条才算已存在。被删掉的那条其实没从 S.items 里拿走，只打了删除标记，
          老写法 find 一到它就 return：差异页明明写着「新增」，点应用却一条都没进来，
          删过的物料再也导不回来，人反复导也看不出问题在哪 */
-      const live=S.items.find(i=>kOf(i)===kk&&!S.deleted[kOf(i)]);
+      let live=null,dead=null;
+      (idxOf[kk]||[]).forEach(ix=>{const it=S.items[ix];
+        if(!dead)dead=it;
+        if(!live&&!S.deleted[kOf(it)])live=it;});
       if(live)return;
-      const dead=S.items.find(i=>kOf(i)===kk);
       /* ut 必须写到秒：合并时墓碑是按「删除时刻 >= 这条的 ut」判死的，
          恢复时若只写日期，旧墓碑秒级时间一定大过它，传上去一合并又被删回去，
          界面上看着「加回来了」、下次打开又没了 */
@@ -5984,12 +6017,13 @@ function applyDiff(d,keys,wipeGone){
         try{S.countGone=S.countGone||{};const k2=locKey(dead.loc||'')+'|'+String(dead.code);delete S.count[k2];S.countGone[k2]=countStamp();}catch(e){}
       }else{
         S.items.push(Object.assign({},r,fresh));
+        (idxOf[kk]=idxOf[kk]||[]).push(S.items.length-1);
       }
       if(S.deleted)delete S.deleted[kk];
       S.logs.unshift({t:now,code:r.code,loc:r.loc||'',from:null,to:r.qty,by:S.settings.userName||'未填',type:'sync',note:'新增建档'});
       nAdd++;
     }else if(keys.has('c:'+kk)){
-      const o=S.items.find(i=>kOf(i)===kk);
+      const o=pick(kk);
       if(!o)return;
       /* 差异表是导入那一刻拍的快照。要是「生成这批差异 → 还没点应用」这段里有人扫码改了数，
          这条已经带上手改标记（SAP 还没追上）。这时候不能再拿快照里的 SAP 数把它盖回去，
@@ -6017,7 +6051,7 @@ function applyDiff(d,keys,wipeGone){
          数量确实没动、但描述/规格照样被改过去，变成「取消了还照改」的怪状况，
          用户以为这条没动，其实台账已经跟 SAP 不一样了 */
       if(!keys.has('m:'+kk))return;
-      const o=S.items.find(i=>kOf(i)===kk);
+      const o=pick(kk);
       if(o){
         const mf=metaDiff(o,r);
         if(mf.length){
