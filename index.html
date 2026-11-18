@@ -3473,7 +3473,9 @@ return {items:items,updated:(rem.updated||local.updated||today()),by:(rem.by||lo
    这里以「清空记录的时间」当水位线：比它早的记录一律不认（本地和远端都算） */
 function logWipeAt(list){
   let w='';
-  (list||[]).forEach(l=>{if(l&&l.type==='wipe'&&String(l.t||'')>w)w=String(l.t||'');});
+  /* wipe（清空全部数据）和 reset（重置变动记录）都是「到此为止，前面的不认」，
+     恢复备份（restore）不算，它就是把旧记录要回来 */
+  (list||[]).forEach(l=>{if(l&&(l.type==='wipe'||l.type==='reset')&&String(l.t||'')>w)w=String(l.t||'');});
   return w;
 }
 function cutLogs(list){
