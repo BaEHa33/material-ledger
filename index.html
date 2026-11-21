@@ -6480,7 +6480,7 @@ function cardHtml(it,f){
      以前同编码多库位时这里会硬印一行库位（怕两张卡长得一样），实际一出现就多出半行字，
      人明确要求「统一按设置里来」。真要区分同编码的两个库位，自己在设置里把库位勾上。 */
   if(f.loc&&it.loc)side.push('<div class="c-line"><span class="c-lb">库位</span> <b>'+esc(it.loc)+'</b></div>');
-  if(f.qty)side.push('<div class="c-line"><span class="c-lb">账面</span> <b>'+fmt(it.qty)+'</b> '+esc(String(it.unit||'').toUpperCase())+'</div>');
+  if(f.qty)side.push('<div class="c-line"><span class="c-lb">账面</span> <b>'+fmt(it.qty)+'</b> '+esc(it.unit||'')+'</div>');
   const bar=String(S.settings.org||'').trim()||'扫码查看库存';
   return '<div class="card">'+
     '<div class="c-bar">'+esc(bar)+'</div>'+
@@ -6489,7 +6489,7 @@ function cardHtml(it,f){
       '<div class="c-row"><span class="c-lb">物料编码</span><span class="c-codev" style="font-size:'+codeFont(it.code)+'">'+codeSplit(it.code)+'</span></div>'+
       (f.name?('<div class="c-row c-nameRow"><span class="c-lb">物料描述</span><span class="c-namev" style="font-size:'+nameFont(it.name)+'">'+esc(it.name||'（未填描述）')+'</span></div>'):'')+
       (meta.length?'<div class="c-meta">'+esc(meta.join(' · '))+'</div>':'')+
-      ((f.unit&&it.unit)?('<div class="c-unitrow"><span class="c-lb">单位</span><span class="c-unitv">'+esc(String(it.unit).toUpperCase())+'</span></div>'):'')+
+      ((f.unit&&it.unit)?('<div class="c-unitrow"><span class="c-lb">单位</span><span class="c-unitv">'+esc(it.unit)+'</span></div>'):'')+
     '</div>'+
     '<div class="c-side">'+
       '<div class="c-qr">'+qrSvg(qrText(it))+'</div>'+
