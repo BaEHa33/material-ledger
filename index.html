@@ -7347,7 +7347,11 @@ async function resetCount(by){
     stashPending();save({quiet:true,file:'marks'});pruneCount();renderLoc();
     toast('已清空残留的 '+allKeys.length+' 条记录');return;
   }
-  if(!confirm('要把这 '+keys.length+' 条标注清空、全部恢复成「未盘」吗？\n\n只清盘点标注，不动库存数量。\n清完别人打开看到的也是未盘。'))return;
+  /* 让点的人先看清代价：14 个人分片盘，这一下清掉的有多少是别人盘的 */
+  let __otherN=0;
+  try{keys.forEach(k=>{const b=String(((S.count[k]||{}).by||'')).trim();if(b&&b!==u)__otherN++;});}catch(e){}
+  if(!confirm('要把这 '+keys.length+' 条标注清空、全部恢复成「未盘」吗？\n\n只清盘点标注，不动库存数量。\n清完别人打开看到的也是未盘。'
+      +(__otherN?'\n\n注意：这 '+keys.length+' 条里有 '+__otherN+' 条是别人盘的，一清他们盘的活儿也跟着没了。':'')))return;
   /* 先在本机清干净、写好水位线、马上落草稿，然后再去同步。
      以前是先等网络拉一遍最新才清，用户点完这两秒里关掉页面，
      清的动作一次都没执行，电脑端就一直还是已盘 */
