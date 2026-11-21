@@ -3088,6 +3088,12 @@ const FIELDS_KEY='wz_card_fields';   /* 卡片显示哪些字段：只在本机�
 const CFG={owner:'',repo:'',branch:'main',path:'data.json',logPath:'logs.json',markPath:'marks.json'};
 const TOKEN_KEY='wz_gh_token';
 function ghToken(){try{return localStorage.getItem(TOKEN_KEY)||'';}catch(e){return '';}}
+/* 台账版本号里自带毫秒时间（Date.now()-随机）：拿它跟本机草稿的 at 比新旧，
+   免得一份早先留下的空草稿把别人刚导进来的台账顶掉 */
+function srvVerTs(v){
+  const n=Number(String(v||'').split('-')[0]);
+  return isFinite(n)&&n>0?n:0;
+}
 function setToken(t){try{ if(t)localStorage.setItem(TOKEN_KEY,t); else localStorage.removeItem(TOKEN_KEY); }catch(e){}}
 function echoB64(s){return btoa(unescape(encodeURIComponent(s)));}
 function readB64(s){return decodeURIComponent(escape(atob(String(s||'').replace(/\s/g,''))));}
@@ -3554,6 +3560,7 @@ const DB={
         S.countWipe=mergeNewer(jm.countWipe||{},S.countWipe);
         S.countGone=mergeNewer(jm.countGone||{},S.countGone);
         if(jm.deleted)S.deleted=mergeNewer(jm.deleted,S.deleted);pruneTomb();
+        window.__srvVerTs=srvVerTs(jm.dataVer);   /* 服务器台账是哪一刻传上去的，应用来跟本机草稿比新旧 */
         pruneCount();
         countSrvStat(jm.count||{});   /* 服务器上到底有多少条，以服务器这份为准：只在传完才更新会显示旧数，「还差几条」就对不上 */
         window.__netDown=false;
@@ -3605,6 +3612,7 @@ const DB={
     else{
       const j=await r.json();jData=j;
       S.items=j.items||[];S.updated=j.updated||'';S.by=j.by||'';
+      if(srvVerTs(j.dataVer))window.__srvVerTs=srvVerTs(j.dataVer);
       S.stockAt=j.stockAt||j.updated||'';S.stockBy=j.stockBy||j.by||'';   /* 老文件没有这俩，退回用 updated */
       if(Array.isArray(j.logs)&&j.logs.length)S.logs=mergeLogs(j.logs,S.logs||[]);   /* 老仓库兼容：记录原先还在 data.json 里。要合并不能覆盖，否则本机记录被别人旧的那份冲掉 */
       if(j.settings){
@@ -4170,7 +4178,9 @@ function save(o){
   try{localStorage.setItem(FIELDS_KEY,JSON.stringify(S.settings.fields||{}));}catch(e){}
   if(DB.mode==='github'){
     try{localStorage.setItem(USER_KEY,JSON.stringify({userName:S.settings.userName}));}catch(e){}
-    if(!ghToken()){setDbState('只读：本机改了设置，不会传到 GitHub');return;}
+    if(!ghToken()){   /* 没令牌传不上去，但必须落到本机草稿：原来直接 return，导入的两千条只在内存里，刷新一下就没了 */
+      try{stashPending();}catch(e){}
+      setDbState('只读：本机改了设置，不会传到 GitHub');return;}
     /* hold：只落到本机和草稿，先不往服务器发。
        扫码页上有「立即上传」按钮，改完数量如果这里就自动传一次，人再点一次按钮，
        同一份改动会传两遍（GitHub 那边多一个一模一样的提交，还白等一次往返） */
@@ -8128,12 +8138,24 @@ async function bootSync(){
       /* 过期草稿：超过 24 小时没传上去的，不自动套回本机（这机器多人共用，
          套昨天的会把今天拉到的台账冲掉），只提示一句，让人自己决定重做还是丢掉 */
       const __pAge=(pend&&pend.at)?(Date.now()-Number(pend.at)):0;
+      /* 草稿比服务器上刚传的那版还旧，或者干脆是空的：一律不套用。
+         2026-11-21 出过一次：清空后台账是空的，某台机器上留着那份空草稿，
+         一打开就把它套回来、还自动补传，把刚导进去的两千条顶成了空 */
+      const __srvTs=Number(window.__srvVerTs||0),__pTm=Number((pend&&pend.at)||0);
+      const __draftStale=!!(__srvTs&&__pTm&&__srvTs>__pTm);
+      const __draftEmpty=!!(pend&&Array.isArray(pend.items)&&!pend.items.length&&(S.items||[]).length);
+      if(pend&&(__draftStale||__draftEmpty)&&!(pend.at&&__pAge>24*3600*1000)){
+        const __pn=(Array.isArray(pend.items)?pend.items.length:0);
+        window.__draftKeep=true;
+        setTimeout(function(){try{toast('本机存着一份旧草稿（台账 '+__pn+' 条），比服务器上的版本旧，已经自动跳过没套用，服务器上那份照常显示',7000);}catch(_){}},1200);
+      }
       if(pend&&canEdit()&&pend.at&&__pAge>24*3600*1000){
         const __pn=(Array.isArray(pend.items)?pend.items.length:0);
         setTimeout(function(){try{toast('本机存着一份 '+Math.round(__pAge/3600000)+' 小时前没传上去的改动（台账 '+__pn+' 条），时间太久了没自动套用，免得盖掉今天的数据。要用的重做一遍，不要的到「设置」页点「清空本机草稿」',8000);}catch(_){}},1200);
         window.__stalePend=true;
       }
-      if(pend&&canEdit()&&!(pend.at&&__pAge>24*3600*1000)){
+      if(pend&&canEdit()&&!(pend.at&&__pAge>24*3600*1000)&&!__draftStale&&!__draftEmpty){
+        window.__draftApplied=true;
         if(Array.isArray(pend.items)){S.items=pend.items;}
         if(pend.logs)   {S.logs=pend.logs;}
         if(pend.count&&typeof pend.count==='object'){S.count=pend.count;}
@@ -8164,6 +8186,9 @@ async function bootSync(){
           setDbState('正在补传上次没传成功的改动…');
           doCommit(true);
         }
+        /* 套回来的草稿得立刻画到屏幕上：补传要是失败（没网、令牌失效），
+           不重画的话人看到的是服务器那一份，以为自己的东西丢了 */
+        try{redrawCurView();}catch(e){}
       }
       /* 顺手把服务器上的 sha 记下来：关页面只剩一次发请求的机会，
          没记住 sha 就得先读一次，那时候页面早没了，标注就传不上去 */
@@ -8246,6 +8271,7 @@ function bootUI(){
   else{go('ledger');}
 }
 function boot(){
+  try{Object.defineProperty(window,'__S',{get:()=>S,configurable:true});}catch(e){}   /* 出问题排查用：控制台看 __S.items.length 就知道现在手上有几条 */
   load();
   bootUI();      /* 先出界面：扫码进来立刻就是库位/单条页，不用等网络 */
   bootSync();    /* 不 await：连 GitHub、拉数据都放后台慢慢来 */
