@@ -8138,23 +8138,23 @@ async function bootSync(){
       /* 过期草稿：超过 24 小时没传上去的，不自动套回本机（这机器多人共用，
          套昨天的会把今天拉到的台账冲掉），只提示一句，让人自己决定重做还是丢掉 */
       const __pAge=(pend&&pend.at)?(Date.now()-Number(pend.at)):0;
-      /* 草稿比服务器上刚传的那版还旧，或者干脆是空的：一律不套用。
-         2026-11-21 出过一次：清空后台账是空的，某台机器上留着那份空草稿，
-         一打开就把它套回来、还自动补传，把刚导进去的两千条顶成了空 */
-      const __srvTs=Number(window.__srvVerTs||0),__pTm=Number((pend&&pend.at)||0);
-      const __draftStale=!!(__srvTs&&__pTm&&__srvTs>__pTm);
+      /* 只有「空草稿」才不套用：这是清空那一刻留下的空台账。
+         2026-11-21 出过一次：某台设备留着这份空草稿，一打开就把它套回来、
+         还自动补传，把刚导进去的两千条顶成了空。
+         草稿里真有物料的一律照旧捡回来补传——14 个人同时在用，别人的改动
+         靠上传时的合并保住，不能因为「服务器比草稿新」就把人家的改动吞了 */
       const __draftEmpty=!!(pend&&Array.isArray(pend.items)&&!pend.items.length&&(S.items||[]).length);
-      if(pend&&(__draftStale||__draftEmpty)&&!(pend.at&&__pAge>24*3600*1000)){
-        const __pn=(Array.isArray(pend.items)?pend.items.length:0);
+      if(pend&&__draftEmpty&&!(pend.at&&__pAge>24*3600*1000)){
         window.__draftKeep=true;
-        setTimeout(function(){try{toast('本机存着一份旧草稿（台账 '+__pn+' 条），比服务器上的版本旧，已经自动跳过没套用，服务器上那份照常显示',7000);}catch(_){}},1200);
+        S.pending=null;   /* 空草稿里就算带着待核对批次也别套回来 */
+        setTimeout(function(){try{toast('本机存着一份空草稿（清空那一刻留下的），已经自动跳过，服务器上的台账照常显示',6000);}catch(_){}},1200);
       }
       if(pend&&canEdit()&&pend.at&&__pAge>24*3600*1000){
         const __pn=(Array.isArray(pend.items)?pend.items.length:0);
         setTimeout(function(){try{toast('本机存着一份 '+Math.round(__pAge/3600000)+' 小时前没传上去的改动（台账 '+__pn+' 条），时间太久了没自动套用，免得盖掉今天的数据。要用的重做一遍，不要的到「设置」页点「清空本机草稿」',8000);}catch(_){}},1200);
         window.__stalePend=true;
       }
-      if(pend&&canEdit()&&!(pend.at&&__pAge>24*3600*1000)&&!__draftStale&&!__draftEmpty){
+      if(pend&&canEdit()&&!(pend.at&&__pAge>24*3600*1000)&&!__draftEmpty){
         window.__draftApplied=true;
         if(Array.isArray(pend.items)){S.items=pend.items;}
         if(pend.logs)   {S.logs=pend.logs;}
