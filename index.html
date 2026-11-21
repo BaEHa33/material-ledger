@@ -3457,17 +3457,31 @@ function mergeDocs(remote,local){
    这里固定写空数组，只为了老备份文件还能被正常读回来（字段留着但不再收数据） */
 const ig=[];
   const rf=rs.fields||null;
+  /* settingsAt：最后一次「在设置页改机构名/前缀/层级」的时刻（秒）。
+     老数据没有这字段，当 0 处理，谁改过谁大 */
+  const __lsa=Number(ls.settingsAt)||0,__rsa=Number(rs.settingsAt)||0;
+  const __remWins=__rsa>__lsa;
   const settings={
-    /* 本机这次提交里带了 org/qrPrefix 字段（哪怕是空串），就按本机的来：
-       否则管理员把组织名清掉，一上传又被服务器旧值捡回来，永远清不掉 */
-    org:('org' in ls)?String(ls.org||''):(rs.org||''),
-    qrPrefix:('qrPrefix' in ls)?String(ls.qrPrefix||''):(rs.qrPrefix||''),
-    /* 卡片上印哪些字段是本机自己的显示偏好，本机改过就以本机为准：
-       原来反过来先取远端的，本机刚勾完就上传，会被服务器旧的那份勾选打回去 */
+    /* 卡片上印哪些字段是本机自己的显示偏好，本机改过就以本机为准 */
     fields:Object.assign({...DEFAULT_FIELDS},ls.fields||rf||{}),
-    ignored:[],
-    locLevel:(Number(ls.locLevel)>=1&&Number(ls.locLevel)<=4)?Number(ls.locLevel):((Number(rs.locLevel)>=1&&Number(rs.locLevel)<=4)?Number(rs.locLevel):2)
+    ignored:[]
   };
+  /* 机构名 / 扫码前缀 / 库位层级是所有人共用的一份，按「谁最后在设置页改过」判：
+     改过的人带一个更新的 settingsAt，别人只是正常保存台账（改数、标已盘），
+     比不过服务器那份，就不会把别人刚改好的前缀悄悄改回去。
+     原来一律本机优先：谁最后保存一次台账，前缀就回滚成他那台的旧值，
+     同一批卡片打出来两种码，还没人看得出为什么 */
+  if(__remWins){
+    settings.org=String(rs.org||'');
+    settings.qrPrefix=String(rs.qrPrefix||'');
+    settings.locLevel=(Number(rs.locLevel)>=1&&Number(rs.locLevel)<=4)?Number(rs.locLevel):2;
+  }else{
+    settings.org=('org' in ls)?String(ls.org||''):String(rs.org||'');
+    settings.qrPrefix=('qrPrefix' in ls)?String(ls.qrPrefix||''):String(rs.qrPrefix||'');
+    const __ll=Number(ls.locLevel);
+    settings.locLevel=(__ll>=1&&__ll<=4)?__ll:((Number(rs.locLevel)>=1&&Number(rs.locLevel)<=4)?Number(rs.locLevel):2);
+  }
+  settings.settingsAt=Math.max(__lsa,__rsa);
   /* 体积兜底：data.json 现在只装物料本体 + 盘点标注 + 删除清单，压到 700KB 以内
      顺序：盘点标注 → 删除墓碑；items（物料本体）绝不删 */
   try{
@@ -3656,11 +3670,27 @@ const DB={
       S.stockAt=j.stockAt||j.updated||'';S.stockBy=j.stockBy||j.by||'';   /* 老文件没有这俩，退回用 updated */
       if(Array.isArray(j.logs)&&j.logs.length)S.logs=mergeLogs(j.logs,S.logs||[]);   /* 老仓库兼容：记录原先还在 data.json 里。要合并不能覆盖，否则本机记录被别人旧的那份冲掉 */
       if(j.settings){
-        /* 本机已经填了就别用服务器上的盖掉：本机刚改完还没点上传，一拉就被打回旧值，
-           人会以为「改了没生效」。只有本机是空着的时候才用服务器那份 */
+        /* 机构名 / 扫码前缀 / 库位层级是 14 个人共用的一份设置，谁最后保存谁定。
+           以前只在本机空着的时候才拿服务器那份：管理员在电脑上把前缀改了，
+           别人手机本机早就有旧值，永远不更新——同一批卡片打出来两种码，谁也看不出为啥。
+           现在只要有值就跟服务器对齐；本机还压着没传上去的草稿时不跟，免得刚改完就被打回。 */
         S.settings.ignored=[];   /* 老的删除黑名单彻底不要了，拉到什么都丢掉 */
-        if(!String(S.settings.org||'').trim())S.settings.org=j.settings.org||'';
-        if(!String(S.settings.qrPrefix||'').trim())S.settings.qrPrefix=j.settings.qrPrefix||'';
+        let __setChg=false;
+        try{
+          if(!localStorage.getItem(PEND_KEY)){
+            const og=String(j.settings.org||'').trim(),rp=String(j.settings.qrPrefix||'').trim();
+            if(og&&og!==String(S.settings.org||'').trim()){S.settings.org=og;__setChg=true;}
+            if(rp&&rp!==String(S.settings.qrPrefix||'').trim()){S.settings.qrPrefix=rp;__setChg=true;}
+            const ll=Number(j.settings.locLevel);
+            if(ll>=1&&ll<=4&&ll!==Number(S.settings.locLevel)){S.settings.locLevel=ll;__setChg=true;}
+            if(Number(j.settings.settingsAt)>Number(S.settings.settingsAt||0))S.settings.settingsAt=Number(j.settings.settingsAt);
+            if(__setChg){
+              try{renderSettings();}catch(e){}
+              try{renderCards();}catch(e){}
+              toast('机构名/扫码前缀/库位层级已按服务器上最新那份更新（这些设置所有人共用）',5000);
+            }
+          }
+        }catch(e){}
         S.deleted=mergeNewer(j.deleted,S.deleted);pruneTomb();
         if(!(Number(S.settings.locLevel)>=1&&Number(S.settings.locLevel)<=4)&&j.settings.locLevel)S.settings.locLevel=j.settings.locLevel;
         if(j.settings.fields&&!localStorage.getItem(FIELDS_KEY))S.settings.fields=Object.assign({...DEFAULT_FIELDS},j.settings.fields);
@@ -3756,6 +3786,7 @@ const DB={
         if(ms.locLevel)S.settings.locLevel=ms.locLevel;
         S.settings.org=ms.org||'';
         S.settings.qrPrefix=ms.qrPrefix||'';
+        if(ms.settingsAt)S.settings.settingsAt=ms.settingsAt;
         S.settings.ignored=[];   /* 老的删除黑名单已废弃，从备份里读回来也直接丢掉 */
       }
     }
@@ -3869,7 +3900,8 @@ function stashPending(){
     localStorage.setItem(PEND_KEY,JSON.stringify({
       items:S.items,logs:S.logs,count:S.count||{},countGone:S.countGone||{},
       settings:{org:S.settings.org,qrPrefix:S.settings.qrPrefix,fields:S.settings.fields,ignored: [],
-                locLevel:S.settings.locLevel||2,userName:S.settings.userName||''},
+                locLevel:S.settings.locLevel||2,userName:S.settings.userName||'',
+                settingsAt:S.settings.settingsAt||0},
       deleted:S.deleted||{},
       countWipe:S.countWipe||{},
       /* 库存版本和最后改动的人/时间也要一起暂存：以前只存了物料和标注，
@@ -7883,7 +7915,7 @@ function bind(){
   document.getElementById('btnPickFiltered').onclick=()=>{const s=ensureSel();pickMatch().forEach(i=>s.add(kOf(i)));repick();toast('把搜出来的 '+pickMatch().length+' 张都勾上了');};
   document.getElementById('btnUseNow').onclick=()=>{
     const pre=curPrefix();if(!pre){toast('当前不是网页地址，没法自动填',3500);return;}
-    S.settings.qrPrefix=pre;save();renderCards();
+    S.settings.qrPrefix=pre;S.settings.settingsAt=countStamp();save();renderCards();
     if(curView==='set')renderSettings();
     toast('已把扫码前缀设为 '+pre+'，请重新打印卡片');
   };
@@ -7909,7 +7941,7 @@ function bind(){
         '确实要改吗？（只是先试试、还没贴码的话，点「确定」没关系）');
       if(!okd){e.target.value=String(was);return;}
     }
-    S.settings.locLevel=want;
+    S.settings.locLevel=want;S.settings.settingsAt=countStamp();
     save({quiet:true});renderLoc();
     toast('父级库位改成取前 '+locLevel()+' 段'+(parents?'，记得把货架上的二维码重新打印一遍':''));
   };
@@ -7947,22 +7979,22 @@ function bind(){
   };
 
   document.getElementById('setPrefix').onchange=e=>{
-    S.settings.qrPrefix=e.target.value.trim();save();renderSettings();renderCards();toast('已保存扫码方式');
+    S.settings.qrPrefix=e.target.value.trim();S.settings.settingsAt=countStamp();save();renderSettings();renderCards();toast('已保存扫码方式');
   };
   document.getElementById('btnPrefixAuto').onclick=()=>{
     const pre=curPrefix();
     if(!pre){toast('当前不是网页地址，没法自动填',3500);return;}
     document.getElementById('setPrefix').value=pre;
-    S.settings.qrPrefix=pre;save();renderSettings();renderCards();
+    S.settings.qrPrefix=pre;S.settings.settingsAt=countStamp();save();renderSettings();renderCards();
     toast('扫码前缀已设为 '+pre+'，卡片要重新打印');
   };
   document.getElementById('btnPrefixDemo').onclick=()=>{
     const base=location.href.split('#')[0];
     document.getElementById('setPrefix').value=base;
-    S.settings.qrPrefix=base;save();renderSettings();toast('已填入本机地址（身边设备能访问才算生效）');
+    S.settings.qrPrefix=base;S.settings.settingsAt=countStamp();save();renderSettings();toast('已填入本机地址（身边设备能访问才算生效）');
   };
   document.getElementById('setUser').onchange=e=>{setUserName(e.target.value);};
-  document.getElementById('setOrg').onchange=e=>{S.settings.org=e.target.value.trim();save();};
+  document.getElementById('setOrg').onchange=e=>{S.settings.org=e.target.value.trim();S.settings.settingsAt=countStamp();save();};
   document.getElementById('ghOwner').onchange=e=>{CFG.owner=e.target.value.trim();saveCfg();};
   document.getElementById('ghRepo').onchange=e=>{CFG.repo=e.target.value.trim();saveCfg();};
   document.getElementById('ghBranch').onchange=e=>{CFG.branch=e.target.value.trim()||'main';saveCfg();};
@@ -8085,6 +8117,7 @@ function bind(){
       sub:'这是全局操作：清完后所有手机扫码、所有人打开看到的台账都是空的，<b>不是只清你这台</b>。<br>'+
           '要清掉的：台账 <b>'+n0+'</b> 条物料、变动记录 <b>'+nl+'</b> 条、盘点标注、已删除清单。<br>'+
           '<b>清掉就找不回来，请先在下面点「导出备份 JSON」存一份。</b><br>'+
+          '<b>清空前先让其他同事停手：别再点「已盘」、别改数，等清完再操作——清空那几秒钟里别人刚传上来的改动会被一起冲掉。</b><br>'+
           '保留下来的：机构名、二维码前缀、卡片显示字段这些设置。',
       ok:'确认清空',
       cb:function(u){
@@ -8176,7 +8209,7 @@ async function bootSync(){
       const __pOld=!!(pend0&&pend0.at&&(Date.now()-Number(pend0.at))>24*3600*1000);
       if(!(S.settings.qrPrefix||'').trim()&&canEdit()&&!(pend0&&!__pOld)){
         const pre=curPrefix();
-        if(pre){S.settings.qrPrefix=pre;save();}
+        if(pre){S.settings.qrPrefix=pre;S.settings.settingsAt=countStamp();save();}
       }
       const pend=pend0;
       /* 恢复进来的草稿如果带暂缓标记，后面的保存（补回、标注、前缀）都得跟着延续，
@@ -8218,6 +8251,7 @@ async function bootSync(){
         if(pend.settings){
           /* 老草稿里带的删除黑名单不要了 */
           if(pend.settings.locLevel)S.settings.locLevel=pend.settings.locLevel;
+          if(Number(pend.settings.settingsAt))S.settings.settingsAt=Number(pend.settings.settingsAt);
           if(pend.settings.userName)S.settings.userName=pend.settings.userName;
         }
         if(pend.dirty&&typeof pend.dirty==='object'){
@@ -8319,6 +8353,8 @@ function bootUI(){
 }
 function boot(){
   try{Object.defineProperty(window,'__S',{get:()=>S,configurable:true});}catch(e){}   /* 出问题排查用：控制台看 __S.items.length 就知道现在手上有几条 */
+  /* 排查用的口子：地址后面带 #qa 才开，平时谁也碰不到。只在控制台里手动排障/自测用 */
+  try{if(String(location.hash||'').indexOf('qa')>=0){window.__qa={save:save,saveNow:saveNow,doCommit:doCommit,pull:()=>DB.pull(true,false,true),getS:()=>S};}}catch(e){}
   /* 同一台电脑上开了两个台账页面：一边改完另一边不知道，各自整份往上写就会互相盖。
      这没法自动合并（两份内存各改各的），只提醒一句让人刷一下再动最省事 */
   try{
