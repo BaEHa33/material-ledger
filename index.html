@@ -200,6 +200,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .card .c-qr svg{width:20mm;height:20mm;display:block}
 .card .c-line{font-size:2.5mm;color:#5b6c76;line-height:1.35;width:100%;text-align:center;word-break:break-all}
 .card .c-line b{color:#182931;font-size:3.3mm;font-weight:700}
+.card .c-line .c-line-u{font-size:3.2mm;font-weight:700;color:#182931;margin-left:.5mm;letter-spacing:.2px}
 
 /* ---------- 扫码单件视图 ---------- */
 .scanbox{max-width:560px;margin:0 auto}
@@ -6480,7 +6481,7 @@ function cardHtml(it,f){
      以前同编码多库位时这里会硬印一行库位（怕两张卡长得一样），实际一出现就多出半行字，
      人明确要求「统一按设置里来」。真要区分同编码的两个库位，自己在设置里把库位勾上。 */
   if(f.loc&&it.loc)side.push('<div class="c-line"><span class="c-lb">库位</span> <b>'+esc(it.loc)+'</b></div>');
-  if(f.qty)side.push('<div class="c-line"><span class="c-lb">账面</span> <b>'+fmt(it.qty)+'</b> '+esc(it.unit||'')+'</div>');
+  if(f.qty)side.push('<div class="c-line"><span class="c-lb">账面</span> <b>'+fmt(it.qty)+'</b> <span class="c-line-u">'+esc(it.unit||'')+'</span></div>');
   const bar=String(S.settings.org||'').trim()||'扫码查看库存';
   return '<div class="card">'+
     '<div class="c-bar">'+esc(bar)+'</div>'+
