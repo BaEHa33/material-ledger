@@ -4231,6 +4231,15 @@ function setUserName(v){
 }
 function save(o){
   const quiet=!!(o&&o.quiet);
+  /* 台账里每条改动都记「谁改的」。名字空着，全都记成「未填」——14 个人共用一份台账，
+     记录没主等于白记，出了差异想追是谁改的、谁盘的，根本追不出来。
+     第一次真动数据时提一次就够了；同一台电脑几个人轮流用的，换人前在设置里改个名 */
+  try{
+    if(canEdit()&&!String(S.settings.userName||'').trim()&&!window.__nameWarned){
+      window.__nameWarned=true;
+      toast('这台设备还没填操作人：改动会记成「未填」，出了差别查不到是谁。去「设置」把名字填上（谁用谁填）',6500);
+    }
+  }catch(e){}
   /* 这次保存要不要「先别传」：hold 时置上，其余保存一律清掉——
      电脑端点保存是即传，不该因为上一次扫码暂缓就一直不传 */
   window.__holdPend=!!(o&&o.hold);
@@ -6019,7 +6028,7 @@ function renderDiff(){
     download('库存差异_'+today().replace(/[:\s-]/g,'').slice(0,12)+'.csv',
       rows.map((r,ri)=>r.map((v,i)=>(i===1&&ri>0)?codeCell(v):tsvEscape(v)).join(',')).join('\r\n'));
   };
-  document.getElementById('btnApply').onclick=()=>{
+  document.getElementById('btnApply').onclick=async()=>{
     if(!canEdit()){toast('这台设备是只读：同步差异要先填管理令牌',4000);return;}
     /* 兜底：这批一条有效物料都没有（比如只粘进了合计行、或草稿坏掉），
        绝不能让「不勾＝全部库存」把整份台账当成「清单里没有的」全删掉 */
@@ -6058,6 +6067,17 @@ function renderDiff(){
       msg+='\n如果这次只导了单个/几个库位，请点取消，并勾上「这次只导了一部分」。';
       if(!confirm(msg))return;
     }
+    /* 应用之前先拉一遍最新台账：从「生成这批差异」到「点应用」，中间隔几分钟很正常。
+       14 个人一起用，这几分钟里很可能有人正在手机上把某条改成现场数（挂上待对账标记）。
+       本机不先拉，就还是旧的那份，applyDiff 根本看不出这条有人手改，
+       会直接把 SAP 数盖上去，现场数的痕迹跟着没了。
+       拉不下来（没网/令牌失效）也不拦着应用，照旧往下走 */
+    try{
+      if(DB.mode==='github'&&!window.__netDown){
+        toast('先拉一遍最新台账：确认有没有别人刚改的数…',2500);
+        await DB.pull(true,false,true);
+      }
+    }catch(e){}
     applyDiff(d,keys,wipeGone);
   };
   /* 「待对账」放在主表下面：主表是这批导入要处理的事，它属于跟踪性质，别抢视线。
