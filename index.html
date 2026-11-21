@@ -179,12 +179,12 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .card .c-bar{flex:none;background:#f1f5f8;border-bottom:.25mm solid #dfe6ea;color:#46606d;
   font-size:2.4mm;line-height:1;padding:1.7mm 3mm;letter-spacing:.3px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.card .c-body{flex:1;min-height:0;display:flex;gap:1.4mm;padding:1.8mm 2.4mm 1.2mm}
+.card .c-body{flex:1;min-height:0;display:flex;gap:1.4mm;padding:2mm 2.4mm 2.2mm}
 .card .c-foot{flex:none;padding:0 3mm 1.9mm;font-size:2.2mm;color:#8a99a3;text-align:right;line-height:1}
-.card .c-main{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:2mm}
-.card .c-row{display:flex;align-items:stretch;flex-direction:column;gap:.5mm;min-width:0}
+.card .c-main{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:4mm}
+.card .c-row{display:flex;align-items:stretch;flex-direction:column;gap:1.2mm;min-width:0}
 .card .c-row .c-lb{line-height:1}
-.card .c-row.c-nameRow{align-items:stretch;flex-direction:column;gap:.6mm}
+.card .c-row.c-nameRow{align-items:stretch;flex-direction:column;gap:1.3mm}
 .card .c-row.c-nameRow .c-lb{line-height:1}
 .card .c-lb{font-size:2.9mm;color:#6a7d88;letter-spacing:.4px;flex:none;line-height:1;font-weight:600}
 .card .c-code4{color:#000;font-weight:900;font-size:1.12em;letter-spacing:1px;padding-bottom:.1mm;border-bottom:.35mm solid #111}
@@ -192,7 +192,9 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .card .c-namev{font-weight:600;color:#182931;line-height:1.32;word-break:break-word;
   display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
-.card .c-meta{font-size:2.7mm;color:#5b6c76;line-height:1.45;word-break:break-word}
+.card .c-meta{font-size:2.9mm;color:#5b6c76;line-height:1.5;word-break:break-word}
+.card .c-unitrow{display:flex;align-items:baseline;gap:1.4mm;min-width:0}
+.card .c-unitv{font-size:4.2mm;font-weight:800;color:#182931;line-height:1.06;letter-spacing:.2px}
 .card .c-side{flex:none;width:24mm;border-left:.25mm solid #e3eaee;padding-left:2mm;
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.2mm}
 .card .c-qr svg{width:20mm;height:20mm;display:block}
@@ -5255,25 +5257,89 @@ function openAddMat(pre){
     const txt=document.getElementById('amBatch').value||'';
     const lines=txt.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
     if(!lines.length){toast('先把要录的粘到下面那个框里');return;}
-    /* 6 段=带规格，5 段=没规格（编码、名称、库位、单位、数量）。段数不对就整行跳过并说清楚，
-       不硬猜，免得把库位当数量吃进去 */
-    const list2=lines.map((ln,i)=>{
-      const p=ln.split(/[\t,，]/).map(x=>x.trim());
-      if(p.length>=6)return {code:p[0],name:p[1],spec:p[2],loc:p[3],unit:p[4],qty:p[5],_n:i+1};
-      if(p.length===5)return {code:p[0],name:p[1],spec:'',loc:p[2],unit:p[3],qty:p[4],_n:i+1};
-      return {code:p[0]||'',name:p[1]||'',_bad:'第 '+(i+1)+' 行只有 '+p.length+' 段，至少要 5 段：编码、名称、库位、单位、数量',_n:i+1};
-    });
-    const bad=list2.filter(x=>x._bad).map(x=>x._bad);
-    const good=list2.filter(x=>!x._bad);
-    if(!good.length){toast(bad.join('；'),5000);return;}
+    amPre(amRows2List(txt));
+  };
+}
+
+/* 批量框：先拆段 → 逐行校验 → 弹一张核对表，人看一眼才写。
+   拆段的坑：名称/规格自带逗号，按逗号切会整体错位（把库位当单位、把单位当数量）。
+   所以整行只要有 Tab 就只按 Tab 切：从 Excel 复制过来一定是 Tab 分隔 */
+function amRows2List(txt){
+  const lines=txt.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+  return lines.map((ln,i)=>{
+    const p=(ln.indexOf('\t')>=0?ln.split('\t'):ln.split(/[,，]/)).map(x=>x.trim());
+    if(p.length>=6)return {code:p[0],name:p[1],spec:p[2],loc:p[3],unit:p[4],qty:p[5],_n:i+1};
+    if(p.length===5)return {code:p[0],name:p[1],spec:'',loc:p[2],unit:p[3],qty:p[4],_n:i+1};
+    return {code:p[0]||'',name:p[1]||'',spec:'',loc:'',unit:'',qty:'',
+      _bad:'只拆出 '+p.length+' 段，至少要 5 段（编码、名称、库位、单位、数量）',_n:i+1};
+  });
+}
+function amPre(list2){
+  const seen={};
+  const rows=list2.map(x=>{
+    if(x._bad)return {x:x,err:x._bad};
+    const rr=amParseOne(x);
+    if(rr.err){let e=rr.err;
+      if(/数量/.test(e)&&x.qty&&/\D/.test(String(x.qty)))e+='（这一格是“'+String(x.qty).slice(0,12)+'”，不是数字：多半名称或规格里带了逗号，整行被拆错了）';
+      return {x:x,err:e,badQty:/数量/.test(e)};}
+    if(seen[rr.ok.key])return {x:x,err:(rr.ok.code+' @'+rr.ok.loc+'：和上面第 '+seen[rr.ok.key]+' 行重了')};
+    seen[rr.ok.key]=x._n;
+    return {x:x,ok:rr.ok,err:''};
+  });
+  const goodr=rows.filter(r=>!r.err), badr=rows.filter(r=>r.err);
+  if(!rows.length){return;}
+  if(!goodr.length){toast('一行都没通过：'+badr.slice(0,3).map(r=>r.err).join('；'),6000);return;}
+  const good=goodr.map(r=>r.ok);
+  const d=document.getElementById('dlg');
+  d.classList.add('wide');
+  const body=rows.map(r=>{
+    const o=r.ok||{}, x=r.x;
+    const bg=r.err?' style="background:#fdecea"':'';
+    const q=(o.qty!=null)?esc(String(o.qty)):(x.qty?('<span style="color:'+(r.badQty?'#b3261e':'#5b6c76')+';font-weight:700">'+esc(String(x.qty))+'</span>'):'<span style="color:#b3261e;font-weight:700">✗</span>');
+    return '<tr'+bg+'><td>'+x._n+'</td><td>'+esc(o.code||x.code||'—')+'</td><td>'+esc(o.name||x.name||'—')+'</td>'+
+      '<td>'+esc(o.spec||x.spec||'')+'</td><td>'+esc(o.loc||x.loc||'—')+'</td>'+
+      '<td>'+(esc(o.unit||x.unit||'')||'—')+'</td><td class="num">'+q+'</td></tr>';
+  }).join('');
+  const liHtml=rows.map(r=>{
+    const o=r.ok||{}, x=r.x;
+    const qv=(o.qty!=null)?esc(String(o.qty)):esc(String(x.qty||'—'));
+    return '<div style="border:1px solid '+(r.err?'#f0c4bd':'#dfe6ea')+';background:'+(r.err?'#fdecea':'#fff')+
+      ';border-radius:8px;padding:8px 10px;margin:0 0 8px">'+
+      '<div style="font-size:13px;line-height:1.5"><span class="muted">第'+x._n+'行</span> <b>'+esc(o.code||x.code||'—')+'</b></div>'+
+      '<div style="font-size:13px;line-height:1.6">'+esc(o.name||x.name||'—')+'</div>'+
+      '<div class="muted" style="font-size:12px;line-height:1.6;margin-top:2px">规 '+esc(o.spec||x.spec||'—')+
+        ' · 库 '+esc(o.loc||x.loc||'—')+' · 单 '+esc(o.unit||x.unit||'—')+
+        ' · 数 <b style="color:'+(r.badQty?'#b3261e':'#182931')+'">'+qv+'</b></div>'+
+      (r.err?('<div style="font-size:12px;color:#b3261e;line-height:1.6;margin-top:3px">'+esc(r.err)+'</div>'):'')+
+      '</div>';
+  }).join('');
+  d.innerHTML='<style>@media (max-width:599px){.ampv-tb{display:none}}@media (min-width:600px){.ampv-li{display:none}}</style>'+
+    '<h3>核对一下再写入</h3>'+
+    '<div class="note" style="margin:4px 0 10px;line-height:1.7">系统按段拆出来的结果都在下面。<b>名称里带逗号会被拆错</b>，所以先给你看一眼；红底那几行不写。</div>'+
+    '<div class="ampv-tb" style="max-height:44vh;overflow:auto;border:1px solid var(--line);border-radius:8px">'+
+      '<table class="tb" style="margin:0"><thead><tr><th>行</th><th>编码</th><th>名称</th><th>规格</th><th>库位</th><th>单位</th><th class="num">数量</th></tr></thead>'+
+      '<tbody>'+body+'</tbody></table></div>'+
+    '<div class="ampv-li" style="max-height:46vh;overflow:auto;padding-right:2px">'+liHtml+'</div>'+
+    (badr.length?('<div class="warn ampv-tb" style="margin-top:10px;line-height:1.7"><b>这 '+badr.length+' 行不写</b>：<br>'+
+      badr.map(r=>esc('第 '+r.x._n+' 行：'+r.err)).join('<br>')+'</div>'):'')+
+    '<div class="row" style="margin-top:12px;justify-content:space-between;align-items:center;gap:10px">'+
+      '<span class="muted">要写 <b>'+good.length+'</b> 条</span>'+
+      '<div class="row" style="gap:10px">'+
+        '<button class="btn" data-close="1">回去改</button>'+
+        '<button class="btn pri" id="amConfirm">确认写入 '+good.length+' 条</button>'+
+      '</div></div>';
+  document.getElementById('mask').classList.remove('hide');
+  document.getElementById('amConfirm').onclick=()=>{
     const r=amWrite(good,'批量');
-    const all=[].concat(bad,r.msg||[]);
+    const all=[].concat(badr.map(x=>x.err),r.msg||[]);
+    document.getElementById('dlg').classList.remove('wide');
     closeDlg();renderTabs();renderLedger();
     toast('录进来 '+r.n+' 条'+(all.length?('；没录的 '+all.length+' 条：'+all.slice(0,3).join('；')+(all.length>3?'…':'')):''),
       all.length?6000:3000);
     askPrintNew(r.keys,all.length?('没录的 '+all.length+' 条：'+all.slice(0,2).join('；')+(all.length>2?'…':'')):'');
   };
 }
+
 function closeDlg(){
   const d=document.getElementById('dlg');
   d.classList.remove('wide');
@@ -6409,13 +6475,12 @@ function codeSplit(v){
 function cardHtml(it,f){
   const meta=[];
   if(f.spec&&it.spec)meta.push('规格 '+it.spec);
-  if(f.unit&&it.unit)meta.push('单位 '+it.unit);
   const side=[];
   /* 卡面显示哪些字段，一律照「设置 → 打印字段」来，不再自作主张加行。
      以前同编码多库位时这里会硬印一行库位（怕两张卡长得一样），实际一出现就多出半行字，
      人明确要求「统一按设置里来」。真要区分同编码的两个库位，自己在设置里把库位勾上。 */
   if(f.loc&&it.loc)side.push('<div class="c-line"><span class="c-lb">库位</span> <b>'+esc(it.loc)+'</b></div>');
-  if(f.qty)side.push('<div class="c-line"><span class="c-lb">账面</span> <b>'+fmt(it.qty)+'</b> '+esc(it.unit||'')+'</div>');
+  if(f.qty)side.push('<div class="c-line"><span class="c-lb">账面</span> <b>'+fmt(it.qty)+'</b> '+esc(String(it.unit||'').toUpperCase())+'</div>');
   const bar=String(S.settings.org||'').trim()||'扫码查看库存';
   return '<div class="card">'+
     '<div class="c-bar">'+esc(bar)+'</div>'+
@@ -6424,13 +6489,13 @@ function cardHtml(it,f){
       '<div class="c-row"><span class="c-lb">物料编码</span><span class="c-codev" style="font-size:'+codeFont(it.code)+'">'+codeSplit(it.code)+'</span></div>'+
       (f.name?('<div class="c-row c-nameRow"><span class="c-lb">物料描述</span><span class="c-namev" style="font-size:'+nameFont(it.name)+'">'+esc(it.name||'（未填描述）')+'</span></div>'):'')+
       (meta.length?'<div class="c-meta">'+esc(meta.join(' · '))+'</div>':'')+
+      ((f.unit&&it.unit)?('<div class="c-unitrow"><span class="c-lb">单位</span><span class="c-unitv">'+esc(String(it.unit).toUpperCase())+'</span></div>'):'')+
     '</div>'+
     '<div class="c-side">'+
       '<div class="c-qr">'+qrSvg(qrText(it))+'</div>'+
       side.join('')+
     '</div>'+
     '</div>'+
-    '<div class="c-foot">'+esc(it.upd?('更新 '+String(it.upd).slice(0,16)):'')+'</div>'+
   '</div>';
 }
 function doPrint(){
