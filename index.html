@@ -3072,12 +3072,43 @@ const LS_KEY='wz_material_ledger_v1';
 const DV_KEY='wz_gh_dv';   /* 只放版本号，几字节，不碰台账本体 */
 const DEFAULT_FIELDS={code:true,name:true,loc:false,spec:false,unit:false,qty:false};
 
+/* 设备时间跟服务器对不上，是多人用最容易被坑的地方：谁手机快几分钟，
+   他标的「已盘」就会盖掉别人后标的「有差异」，清标注的水位线还会被设到未来，
+   把别人刚盘的全作废。所以时间一律按服务器返回的 Date 头来算（applyServerDate） */
+const SKEW_KEY='wz_gh_skew';
+function srvSkew(){try{const v=Number(localStorage.getItem(SKEW_KEY));return isFinite(v)?v:0;}catch(e){return 0;}}
+function nowMs(){return Date.now()+srvSkew();}
+function applyServerDate(h){
+  try{
+    if(!h)return;
+    const t=Date.parse(h);
+    if(!isFinite(t)||!t)return;
+    const d=t-Date.now();
+    let old=null;
+    try{const r=localStorage.getItem(SKEW_KEY);old=(r==null)?null:Number(r);}catch(e){}
+    /* 网络往返和头的时间精度都有一两秒误差：差得少就跟着修；
+       差得多（超过 1 分钟）说明这台设备的钟真不准，直接跟上去 */
+    if(old==null||!isFinite(old)||Math.abs(d-old)<2500||Math.abs(d)>60000){
+      try{localStorage.setItem(SKEW_KEY,String(d));}catch(e){}
+    }
+    if(Math.abs(d)>60000&&!window.__skewWarned){
+      window.__skewWarned=1;
+      setTimeout(function(){try{toast('这台设备的时间跟服务器差了约 '+Math.round(d/60000)+' 分钟。盘点状态是按时间比新旧的，时间不准会出现「自己盘的被别人盖掉」，建议把手机时间设成自动',9000);}catch(e){}},1200);
+    }
+  }catch(e){}
+}
 /* 盘点标注和「清标注」的时刻要精确到秒：只到分钟的话，
-   同一分钟里清完又重新标，新旧分不出来，新标会被当成旧的删掉 */
-function countStamp(off){const d=new Date();if(off)d.setSeconds(d.getSeconds()+off);const p=n=>String(n).padStart(2,'0');
-  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());}
-function today(){const d=new Date();const p=n=>String(n).padStart(2,'0');
-  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes());}
+   同一分钟里清完又重新标，新旧分不出来，新标会被当成旧的删掉。
+   时间统一按北京时间（UTC+8）写，不跟设备时区走：有人手机时区设成伦敦，
+   他那台写出来的时间就跟别人差 8 小时，合并时不是他全赢就是全输 */
+function cnClock(ms){
+  const d=new Date(ms+8*3600*1000),p=n=>String(n).padStart(2,'0');
+  return {y:d.getUTCFullYear(),M:p(d.getUTCMonth()+1),D:p(d.getUTCDate()),h:p(d.getUTCHours()),m:p(d.getUTCMinutes()),s:p(d.getUTCSeconds())};
+}
+function countStamp(off){const c=cnClock(nowMs()+(off?off*1000:0));
+  return c.y+'-'+c.M+'-'+c.D+' '+c.h+':'+c.m+':'+c.s;}
+function today(){const c=cnClock(nowMs());
+  return c.y+'-'+c.M+'-'+c.D+' '+c.h+':'+c.m;}
 
 /* countWipe：每个库位「上次清标注的时间」。比这个时间早的标注一律当过期丢掉，
    这样别的手机本机存着的旧「已盘」不会再传回来把电脑端又刷成已盘 */
@@ -3551,6 +3582,7 @@ const DB={
     let jm=null;
     try{
       const rm=await fetch('./marks.json?t='+Date.now(),{cache:'no-store'});
+      applyServerDate(rm.headers.get('date'));   /* 顺手校一下这台设备的钟 */
       /* 401/403 不是网断了，是令牌过期或者没权限。混进「没连上」里，
          人只会一直点刷新、一直等，不知道要去设置页重新填一次令牌 */
       if(rm.status===401||rm.status===403){const ea=new Error('令牌失效或没有权限');ea.auth=true;throw ea;}
@@ -3606,7 +3638,15 @@ const DB={
     }
     let jData=null;
     const r=await fetch('./data.json?t='+Date.now(),{cache:'no-store'});
-    if(r.status===404){S.items=[];S.updated='';S.stockAt='';S.stockBy='';}
+    applyServerDate(r.headers.get('date'));
+    if(r.status===404){
+      /* 404≠台账被删了：GitHub Pages 重新发布的那几十秒，边缘节点会短暂返回 404。
+         以前这里直接清空本机、还顺手写回缓存，一次发布就把整台设备的台账抹了——
+         多人用的时候，正好赶上别人正在上传，就会中这个招。
+         本机原来有数据就当断网处理：留本机这份，弹「没连上」，等下一轮再拉 */
+      if((S.items||[]).length){window.__netDown=true;throw new Error('服务器上的数据文件暂时读不到（404），先显示本机这份');}
+      S.items=[];S.updated='';S.stockAt='';S.stockBy='';
+    }
     else if(r.status===401||r.status===403){const ea=new Error('令牌失效或没有权限');ea.auth=true;throw ea;}
     else if(!r.ok)throw new Error('读取数据文件失败 '+r.status);
     else{
@@ -4246,6 +4286,10 @@ function wipeLimit(cw,loc){
     const v=String(w[k]||'');
     if(v>lim)lim=v;
   });
+  /* 时钟快的设备以前能把水位线设到「未来」：比它早的标注全作废，
+     那一整个库位之后谁盘都不算数，看着就是「点了已盘又变回未盘」。
+     真正的水位线只会是过去某一刻，落到未来的一律当成坏数据丢掉，不生效 */
+  if(lim&&lim>countStamp())return '';
   return lim;
 }
 function countWipeOf(loc){return wipeLimit(S.countWipe,loc);}
@@ -4255,6 +4299,9 @@ function pruneCount(){
   const cg=asObj(S.countGone);
   let n=0;
   Object.keys(c).forEach(k=>{
+    /* 设备时钟快，标的「已盘」带着未来时间，谁后标都比不过它 —— 纠回当下。
+       不改状态，只把时间拉回来，免得它永久压住别人 */
+    try{if(c[k]&&String(c[k].t||'')>countStamp(60))c[k].t=countStamp();}catch(e){}
     /* 单条被删过的标注：墓碑比它新就作废。跟库位水位线一个道理，
        不做这一步，删掉的标注每次拉回来都会复活 */
     /* 用严格小于：删完的同一秒里人又重新点了「已盘」，秒级时间戳会相等，
@@ -8272,6 +8319,18 @@ function bootUI(){
 }
 function boot(){
   try{Object.defineProperty(window,'__S',{get:()=>S,configurable:true});}catch(e){}   /* 出问题排查用：控制台看 __S.items.length 就知道现在手上有几条 */
+  /* 同一台电脑上开了两个台账页面：一边改完另一边不知道，各自整份往上写就会互相盖。
+     这没法自动合并（两份内存各改各的），只提醒一句让人刷一下再动最省事 */
+  try{
+    window.addEventListener('storage',function(e){
+      try{
+        if(!e||!e.key||(e.key!==PEND_KEY&&e.key!==LS_KEY))return;
+        if(document.hidden||window.__otherTabShown)return;
+        window.__otherTabShown=true;
+        setTimeout(function(){try{toast('这台电脑上还开着另一个台账页面，那边刚存了改动。两边各改各的会互相盖，这边先点右上角刷新一下再操作',9000);}catch(x){}},900);
+      }catch(x){}
+    });
+  }catch(e){}
   load();
   bootUI();      /* 先出界面：扫码进来立刻就是库位/单条页，不用等网络 */
   bootSync();    /* 不 await：连 GitHub、拉数据都放后台慢慢来 */
