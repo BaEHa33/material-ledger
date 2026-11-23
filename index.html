@@ -215,8 +215,8 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .kv dd{margin:0}
 
 /* ---------- 弹窗 ---------- */
-.mask{position:fixed;inset:0;background:rgba(16,34,44,.5);display:flex;align-items:center;justify-content:center;padding:14px;z-index:99}
-.dlg{background:#fff;border-radius:8px;width:100%;max-width:430px;padding:16px;box-shadow:0 12px 40px rgba(10,30,40,.3)}
+.mask{position:fixed;inset:0;background:rgba(16,34,44,.5);display:flex;align-items:flex-start;justify-content:center;padding:14px;z-index:99;overflow-y:auto}
+.dlg{background:#fff;border-radius:8px;width:100%;max-width:430px;padding:16px;box-shadow:0 12px 40px rgba(10,30,40,.3);max-height:calc(100vh - 28px);max-height:calc(100dvh - 28px);overflow-y:auto;margin:auto}
 .dlg.wide{max-width:860px}
 /* 手机上看明细：描述列挤成「（物料已删…」，干脆藏掉，留编码和库位就够认人 */
 /* 320、360 这种窄屏，「新增物料（来料先录）」一行放不下，字尾会被截掉。允许折两行，一个字都不丢 */
