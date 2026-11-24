@@ -7598,11 +7598,16 @@ function printLocAll(range,by){
     blocks+=r.rows;
   });
   if(!blocks){toast(by?'按这个范围，'+by+' 没有可打印的物料':'按这个范围没有可打印的物料');return;}
-  const meta='全库 '+nodes.length+' 个父级库位 · '+nc+' 个子库位 · '+
-    nodes.reduce((a,x)=>a+x.total,0)+' 条物料 · 范围 '+
-    (range==='done'?'仅已盘':range==='diff'?'仅有差异':'全部')+' · 本单共 '+printed+' 条 · 已标注 '+
-    nodes.reduce((a,x)=>a+x.marked,0)+' · 有差异 '+nodes.reduce((a,x)=>a+x.diff,0)+
-    ' · 打印于 '+today()+(S.settings.userName?' · 打印人 '+esc(S.settings.userName):'');
+  const total=nodes.reduce((a,x)=>a+x.total,0),
+        marked=nodes.reduce((a,x)=>a+x.marked,0),
+        diff=nodes.reduce((a,x)=>a+x.diff,0);
+  const rangeLab=range==='done'?'仅已盘':range==='diff'?'仅有差异':'';
+  const filtered=range!=='all'||by;   /* 筛过范围或按人挑过，才需要标出本单打了几条 */
+  let meta='全库 '+nodes.length+' 个父级库位 · '+nc+' 个子库位 · '+total+' 条物料';
+  if(rangeLab)meta+=' · 范围 '+rangeLab;
+  if(filtered)meta+=' · 本单共 '+printed+' 条';
+  meta+=' · 已标注 '+marked+' · 有差异 '+diff+' · 打印于 '+today()+
+    (S.settings.userName?' · 打印人 '+esc(S.settings.userName):'');
   document.getElementById('printWrap').innerHTML=
     sheetWrap('仓库物料盘点表',meta,PDF_COLS,blocks,'盘点人：____________　复核人：____________　日期：____________');
   window.print();
