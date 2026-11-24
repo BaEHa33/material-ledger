@@ -7551,7 +7551,7 @@ function printChildList(ch,range,by){
   const rows=list.map(it=>{
     const m=getCnt(ch.loc,it.code)||{};
     return '<tr>'+
-      '<td class="pcode">'+esc(it.code)+'</td><td class="pname">'+esc(it.name||'')+'</td><td class="ploc">'+esc(it.loc||'')+'</td>'+
+      '<td class="pcode">'+esc(it.code)+'</td><td><div class="pname">'+esc(it.name||'')+'</div></td><td class="ploc">'+esc(it.loc||'')+'</td>'+
       '<td style="text-align:center">'+esc(it.unit||'')+'</td><td style="text-align:right">'+fmt(it.qty)+'</td>'+
       '<td style="text-align:center">'+cntLabel(m.st)+(lendStale(it,m)?'<br><span style="font-size:7.2pt;color:#8a5a1a">后改过</span>':'')+'</td><td>'+esc(m.note||'')+'</td>'+
       '<td style="text-align:center;font-size:7.8pt;line-height:1.35">'+esc(m.by||'')+(m.t?'<br>'+esc(String(m.t).slice(5,16)):'')+'</td>'+
@@ -7578,7 +7578,7 @@ function locSumRows(node,range,by){
     return list.map(it=>{
       const m=getCnt(c.loc,it.code)||{};
       return '<tr>'+
-        '<td class="pcode">'+esc(it.code)+'</td><td class="pname">'+esc(it.name||'')+'</td><td class="ploc">'+esc(it.loc||c.loc||'')+'</td>'+
+        '<td class="pcode">'+esc(it.code)+'</td><td><div class="pname">'+esc(it.name||'')+'</div></td><td class="ploc">'+esc(it.loc||c.loc||'')+'</td>'+
         '<td style="text-align:center">'+esc(it.unit||'')+'</td><td style="text-align:right">'+fmt(it.qty)+'</td>'+
         '<td style="text-align:center">'+cntLabel(m.st)+(lendStale(it,m)?'<br><span style="font-size:7.2pt;color:#8a5a1a">后改过</span>':'')+'</td><td>'+esc(m.note||'')+'</td>'+
         '<td style="text-align:center;font-size:7.8pt;line-height:1.35">'+esc(m.by||'')+(m.t?'<br>'+esc(String(m.t).slice(5,16)):'')+'</td>'+
