@@ -400,6 +400,9 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .psheet th,.psheet td{border:.4pt solid #8a8a8a;padding:.45mm 1mm;font-size:7.2pt;line-height:1.1;vertical-align:middle;word-break:normal;overflow-wrap:anywhere;white-space:normal;text-overflow:clip;overflow:visible}
 .psheet thead th{background:#eceff1;font-weight:700;text-align:center}
 .psheet tbody tr{page-break-inside:avoid;break-inside:avoid}
+.psheet .pcode{white-space:nowrap;letter-spacing:.2px}
+.psheet .pname{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.25}
+.psheet .ploc{line-height:1.5;padding:.8mm 1mm}
 .psheet .pgrp td{background:#eaf2f6;font-weight:700;font-size:7.5pt;letter-spacing:.2px;border-top:.8pt solid #8a8a8a;page-break-after:avoid;break-after:avoid}
 
 .psheet .pgrp2 td{background:#d8e4ea;font-weight:700;font-size:8.1pt;letter-spacing:.3px;border-top:1pt solid #5c5c5c;border-bottom:.8pt solid #8a8a8a;page-break-after:avoid;break-after:avoid}
@@ -7548,14 +7551,14 @@ function printChildList(ch,range,by){
   const rows=list.map(it=>{
     const m=getCnt(ch.loc,it.code)||{};
     return '<tr>'+
-      '<td>'+esc(it.code)+'</td><td style="font-size:8pt">'+esc(it.loc||'')+'</td><td>'+esc(it.name||'')+'</td><td>'+esc(it.spec||'')+'</td>'+
-      '<td style="text-align:right">'+fmt(it.qty)+'</td><td style="text-align:center">'+esc(it.unit||'')+'</td>'+
+      '<td class="pcode">'+esc(it.code)+'</td><td class="pname">'+esc(it.name||'')+'</td><td class="ploc">'+esc(it.loc||'')+'</td>'+
+      '<td style="text-align:center">'+esc(it.unit||'')+'</td><td style="text-align:right">'+fmt(it.qty)+'</td>'+
       '<td style="text-align:center">'+cntLabel(m.st)+(lendStale(it,m)?'<br><span style="font-size:7.2pt;color:#8a5a1a">后改过</span>':'')+'</td><td>'+esc(m.note||'')+'</td>'+
       '<td style="text-align:center;font-size:7.8pt;line-height:1.35">'+esc(m.by||'')+(m.t?'<br>'+esc(String(m.t).slice(5,16)):'')+'</td>'+
     '</tr>';
   }).join('');
-  const cols=[{t:'物料编码',w:'14%'},{t:'库位',w:'11%'},{t:'物料名称',w:'18%'},{t:'规格型号',w:'12%'},
-              {t:'数量',w:'8%'},{t:'单位',w:'5%'},{t:'状态',w:'8%'},{t:'备注',w:'10%'},{t:'盘点人/时间',w:'14%'}];
+  const cols=[{t:'物料编码',w:'11%'},{t:'物料名称',w:'26%'},{t:'库位',w:'11%'},{t:'单位',w:'6%'},
+              {t:'数量',w:'8%'},{t:'状态',w:'8%'},{t:'备注',w:'16%'},{t:'盘点人/时间',w:'14%'}];
   const meta='库位 <b>'+esc(ch.loc)+'</b> · 共 '+list.length+' 条 · 范围 '+
     (range==='done'?'仅已盘':range==='diff'?'仅有差异':'全部')+(by?' · 只打 '+esc(by)+' 盘的':'')+' · 打印于 '+today()+
     (S.settings.userName?' · 打印人 '+esc(S.settings.userName):'');
@@ -7570,18 +7573,13 @@ function locSumRows(node,range,by){
     const list=pick(c);
     if(!list.length)return '';
     printed+=list.length;
-    /* 这张表表头是 PDF_COLS 的八列（编码/名称/规格/数量/单位/状态/备注/盘点人），
-       库位不占独立列——每段物料前面已经有一整行分组标题写着库位名，行里再重复一遍纯属浪费纸。
-       所以分组行 colspan 必须是 8、数据行必须是 8 个 td，跟表头严格对上。 */
-    const sub='<tr class="pgrp"><td colspan="8">'+esc(c.loc)+'　'+c.items.length+' 条'+
-      (list.length!==c.items.length?' · 本单列 '+list.length+' 条':'')+
-      '　已盘 '+c.done+'　有差异 '+c.diff+'　待复核 '+c.rev+'　未盘 '+(c.items.length-c.marked)+
-      '　完成度 '+pctText(c.marked,c.items.length)+'</td></tr>';
-    return sub+list.map(it=>{
+    /* 统一平铺清单：表头 PDF_COLS 八列（编码/名称/库位/单位/数量/状态/备注/盘点人），
+       每条物料一行、库位直接占独立列，不再插分组标题行；数据行必须是 8 个 td，跟表头严格对上。 */
+    return list.map(it=>{
       const m=getCnt(c.loc,it.code)||{};
       return '<tr>'+
-        '<td>'+esc(it.code)+'</td><td>'+esc(it.name||'')+'</td><td>'+esc(it.spec||'')+'</td>'+
-        '<td style="text-align:right">'+fmt(it.qty)+'</td><td style="text-align:center">'+esc(it.unit||'')+'</td>'+
+        '<td class="pcode">'+esc(it.code)+'</td><td class="pname">'+esc(it.name||'')+'</td><td class="ploc">'+esc(it.loc||c.loc||'')+'</td>'+
+        '<td style="text-align:center">'+esc(it.unit||'')+'</td><td style="text-align:right">'+fmt(it.qty)+'</td>'+
         '<td style="text-align:center">'+cntLabel(m.st)+(lendStale(it,m)?'<br><span style="font-size:7.2pt;color:#8a5a1a">后改过</span>':'')+'</td><td>'+esc(m.note||'')+'</td>'+
         '<td style="text-align:center;font-size:7.8pt;line-height:1.35">'+esc(m.by||'')+(m.t?'<br>'+esc(String(m.t).slice(5,16)):'')+'</td>'+
       '</tr>';
@@ -7589,8 +7587,8 @@ function locSumRows(node,range,by){
   }).join('');
   return {rows:rows,printed:printed};
 }
-const PDF_COLS=[{t:'物料编码',w:'15%'},{t:'物料名称',w:'20%'},{t:'规格型号',w:'14%'},{t:'数量',w:'8%'},
-              {t:'单位',w:'6%'},{t:'状态',w:'8%'},{t:'备注',w:'17%'},{t:'盘点人/时间',w:'12%'}];
+const PDF_COLS=[{t:'物料编码',w:'11%'},{t:'物料名称',w:'26%'},{t:'库位',w:'11%'},{t:'单位',w:'6%'},
+              {t:'数量',w:'8%'},{t:'状态',w:'8%'},{t:'备注',w:'16%'},{t:'盘点人/时间',w:'14%'}];
 function printLocAll(range,by){
   range=range||'all';
   const nodes=locFiltered();
@@ -7600,8 +7598,7 @@ function printLocAll(range,by){
     const r=locSumRows(n,range,by);
     if(!r.rows)return;
     printed+=r.printed;nc+=n.locCount;
-    blocks+='<tr class="pgrp2"><td colspan="8">'+esc(n.p)+'　'+n.locCount+' 个子库位 · '+n.total+' 条物料'+
-      '　已标注 '+n.marked+'/'+n.total+(n.diff?'　有差异 '+n.diff:'')+'</td></tr>'+r.rows;
+    blocks+=r.rows;
   });
   if(!blocks){toast(by?'按这个范围，'+by+' 没有可打印的物料':'按这个范围没有可打印的物料');return;}
   const meta='全库 '+nodes.length+' 个父级库位 · '+nc+' 个子库位 · '+
