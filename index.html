@@ -7175,7 +7175,9 @@ function renderChild(box,node,ch){
   box.innerHTML=
     '<div class="locback">'+
       (inScanMode()
-        ? '<button class="btn sm" id="locBackParent">← 返回父级</button><button class="btn sm" id="locPick">← 换个库位</button>'
+        ? (node.locCount>1
+            ? '<button class="btn sm" id="locBackParent">← 返回父级</button><button class="btn sm" id="locPick">← 换个库位</button>'
+            : '<button class="btn sm" id="locPick">← 换个库位</button>')
         : '<button class="btn sm" id="locBackParent">← '+esc(node.p)+'</button>')+
       '<span class="crumb"><b>'+esc(node.p)+'</b> › <b>'+esc(ch.loc)+'</b></span>'+
     '</div>'+
